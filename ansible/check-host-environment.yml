@@ -1,0 +1,5 @@
+---
+  - name: ns lookup
+    delegate_to: localhost
+    shell: nslookup {{item}}
+    register: nslookup_result

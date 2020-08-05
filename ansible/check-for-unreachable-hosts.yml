@@ -1,0 +1,12 @@
+---
+  - name: check active_servers
+    set_fact:
+      unreachable_servers: "{{ (ansible_play_hosts_all | difference(ansible_play_hosts))}}"
+    register: cmd_output
+
+  - name: report unreachable hosts
+    with_items: '{{unreachable_servers}}'
+    when: ansible_play_hosts != ansible_play_hosts_all
+    include_tasks: report-unreachable-hosts.yml
+    run_once: true  
+   

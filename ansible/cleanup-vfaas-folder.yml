@@ -1,0 +1,11 @@
+- name: Clean up Vfaas folder on localhost.
+  hosts: localhost
+  connection: local
+
+  tasks:     
+  - name: Clear Vfaas folder
+  file:
+    path: /var/tmp/vfaas"{{uid}}"
+    state: absent
+  delegate_to: localhost
+  run_once: true 

@@ -1,0 +1,35 @@
+---
+- name: Add Host to Dynamic Inventory
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+  - add_host:
+      name: "{{ item }}"
+      groups: dynamic
+    with_items: "{{ linuxHosts }}"
+
+- name: Running Validation Playbook
+  hosts: dynamic
+  ignore_unreachable: false
+  gather_facts: true
+  serial: "100%"
+  vars:
+    emailOverride: "none"
+    elasticUrl: "none"
+    uid: "{{uid}}"
+    jsonVar: "{{ lookup('file', '/var/tmp/vfaas/templates/{{mne}}.json') | from_json }}"
+
+  tasks:
+# This compares hosts that are active to hosts that we expect to be active
+# When they are not the same it runs the task list check-for-unreachable-hosts.yml
+# we check linux here and windows in the windows play for credential issues
+# we don't check this in the linux play because globals use the same play
+  - name: check connectivity to linux hosts
+    run_once: true
+    include_tasks: check-for-unreachable-hosts.yml
+    when: ansible_play_hosts != ansible_play_hosts_all
+
+  - name: deploy and execute linux
+    include_tasks: deploy-and-execute-linux.yml
+ 

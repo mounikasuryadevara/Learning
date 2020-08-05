@@ -1,0 +1,59 @@
+---
+- name: Send-Results-Email
+  hosts: localhost
+  connection: local
+  vars:
+    emailOverride: "none"
+    #  uid: "{{uid}}"
+  jsonVar: "{{ lookup('file', '/var/tmp/vfaas/templates/{{mne}}.json') | from_json }}"
+
+  tasks:
+  - name: Preparing to Send Email
+    delegate_to: localhost
+    run_once: true
+    copy:
+      src: /var/tmp/vfaas{{uid}}/templates/{{mne}}.json
+      dest: /var/tmp/vfaas{{uid}}/python/modules
+
+  - name : debug logString
+    debug:
+    var: logStringGlobal
+
+  - name: Adding logString to the log file
+    copy:
+      content: "{{(logString + logStringGlobal)}}"
+      dest: /var/tmp/vfaas{{uid}}/python/modules/{{mne}}{{uid}}.log
+      follow: yes
+    delegate_to: localhost
+
+  - name: Report WinRm errors
+    shell: python report_unreachable_hosts.py --unreachable_servers {{item}} --mne {{mne}} --uid {{uid}}
+    args:
+      chdir: /var/tmp/vfaas{{uid}}/python/modules/
+    with_items: "{{winRmError}}"
+    when:  winRmError is iterable
+    run_once: true
+    delegate_to: localhost
+
+  - name: Send Email Using Config Email
+    delegate_to: localhost
+    run_once: true
+    shell: python email_methods.py --uid {{uid}} --mne {{mne}} --env {{emailEnv}} --scope {{scope}}
+    when: email == "none"
+    ignore_errors: yes
+    args:
+      chdir: /var/tmp/vfaas{{uid}}/python/modules
+    register: result
+  - debug: var=result.stdout_lines
+
+  - name: Send Email Using Override Email
+    delegate_to: localhost
+    run_once: true
+    shell: python email_methods.py --uid {{uid}} --mne {{mne}} --email {{email}} --env {{emailEnv}} --scope {{scope}}
+    when: email != "none"
+    ignore_errors: yes
+    args:
+      chdir: /var/tmp/vfaas{{uid}}/python/modules
+    register: result
+  - debug: var=result.stdout_lines
+ 

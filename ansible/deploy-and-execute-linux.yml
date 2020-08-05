@@ -1,0 +1,87 @@
+--- 
+  - name: Clear Vfaas folder
+    file:
+       path: /var/tmp/vfaas
+       state: absent
+
+  - name: Preparing VFaaS Directory
+    file:
+      path: /var/tmp/vfaas
+      state: directory
+
+  - name: Deploy VFaaS Archive
+    copy:
+      src: /var/tmp/vfaas{{uid}}/vfaas.tgz
+      dest: /var/tmp/vfaas/
+
+  - name: Unarchive VFaas
+    unarchive:
+      src: /var/tmp/vfaas/vfaas.tgz
+      dest: /var/tmp/vfaas/
+    remote_src: yes
+
+  - name: Deploy Config File
+    copy:
+      src: /var/tmp/vfaas{{uid}}/templates/{{mne}}.json
+      dest: /var/tmp/vfaas/python/modules/
+
+  - name: Run initialize Config
+    shell: python initialize_config.py --uid {{uid}} --mne {{mne}} --elasticUrl {{elasticUrl}} --emailOverride {{email}} --scope {{scope}}
+    args:
+      chdir: /var/tmp/vfaas/python
+    register: result
+    ignore_errors: yes
+  - debug: var=result.stdout_lines
+
+#Running SSH when the user is defined
+  - name: Run SSH With Username
+    when: 
+    - jsonVar[inventory_hostname].ssh is defined
+    - item.username is defined
+    loop: "{{jsonVar[inventory_hostname].ssh}}"
+    become: yes
+    shell: python sshValidation.py --hostname {{item.hostname}} --username {{item.username}} --keyPath {{item.keyPath}} --uid {{uid}}  --mne {{mne}} --sshHost {{inventory_hostname}}
+    args:
+      chdir: /var/tmp/vfaas/python/modules
+    register: sshResult
+
+#Running the SSH job only when the user ISNT defined
+  - name: Run SSH Without Username
+    when: 
+    - jsonVar[inventory_hostname].ssh is defined
+    - item.username is undefined
+    loop: "{{jsonVar[inventory_hostname].ssh}}"
+    become: yes
+    shell: python sshValidation.py --hostname {{item.hostname}} --uid {{uid}}  --mne {{mne}} --sshHost {{inventory_hostname}}
+    args:
+      chdir: /var/tmp/vfaas/python/modules
+    register: sshResultWithout
+
+  - name: adding ssh logs with username to logstring
+    set_stats:
+    data:
+      logString: "{{item.stderr_lines[0]}}"
+    aggregate: yes
+    with_items: "{{sshResult.results}}"
+    when: item.stderr_lines is defined
+
+  - name: adding ssh logs without username to logstring
+    set_stats:
+    data:
+      logString: "{{item.stderr_lines[0]}}"
+    aggregate: yes
+    with_items: "{{sshResultWithout.results}}"
+    when: item.stderr_lines is defined
+
+  - name: Check for failures
+    set_stats:
+    data:
+      noFails: false
+    when: result.rc != 0
+
+  - name: adding result stderr_lines
+    set_stats:
+    data:
+      logString: "{{result.stderr}}"
+    aggregate: yes
+

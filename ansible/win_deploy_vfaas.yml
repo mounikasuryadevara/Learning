@@ -1,0 +1,70 @@
+---
+  - name: Stage Windows Variables
+    set_fact:
+      ansible_user: xqsrvpatch
+      ansible_port: 5985
+      ansible_connection: winrm
+      ansible_winrm_transport: ntlm
+      ansible_winrm_server_cert_validation: ignore
+
+  - name: Copy VFaaS to Server
+    win_copy:
+      src: /var/tmp/vfaas{{uid}}/vfaas.zip
+      dest: C:\temp\
+    remote_src: no
+
+  - name: Unarchive VFaas
+    win_unzip:
+      src: C:\temp\vfaas.zip
+      dest: C:\temp\vfaas{{uid}}
+
+  - name: Deploy Config File
+    win_copy:
+      src: /var/tmp/vfaas{{uid}}/templates/{{mne}}.json
+      dest: C:\temp\vfaas{{uid}}\powershell\
+      remote_src: no
+
+  - name: Run VFaaS
+    block:
+    - name: Execute VFaaS.ps1
+      win_shell: C:\temp\vfaas{{uid}}\powershell\VFaaS.ps1 -MNE {{mne}} -UID {{uid}}
+      become: yes
+      become_method: runas
+      become_user: XQSRVPATCH
+      args:
+        chdir: C:\temp\vfaas{{uid}}\powershell\
+      register: result
+      ignore_errors: yes
+
+    - name: Clear Vfaas folder
+      win_file:
+        path: C:\temp\vfaas{{uid}}
+        state: absent
+
+    - name: adding result stdout_lines
+      set_stats:
+        data:
+          logString: "{{ logString + '\n' + result.stdout }}"
+        aggregate: yes
+      when: result.stdout_lines is defined
+
+    - name: Check for failures
+      set_stats:
+        data:
+          noFails: false
+        when: result.rc != 0
+      rescue:
+    - name: Report Windows unreachable error
+      set_stats:
+        data:
+          winRmError: "{{winRmError|default([])}} + ['{{ inventory_hostname }}']"
+        when: result.exception is defined and "Win32ErrorCode" in result.exception
+
+    - name: debug winRm
+      debug: 
+        var: winRmError
+
+  - name: check connectivity to hosts
+    run_once: true
+    include_tasks: check-for-unreachable-hosts.yml
+    when: ansible_play_hosts != ansible_play_hosts_all

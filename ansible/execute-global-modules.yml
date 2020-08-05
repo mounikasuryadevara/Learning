@@ -1,0 +1,48 @@
+--- 
+- name: Running Validation Playbook
+  hosts: localhost
+  connection: local 
+  ignore_unreachable: false
+  gather_facts: false
+  serial: "100%"
+  vars:
+    emailOverride: "none"
+    elasticUrl: "none"
+    uid: "{{uid}}"
+    noUrl: false
+    urlArgs: ''
+    truesightArgs: ''
+    urlsDict:
+    truesightDict:
+    noFails: true
+    truesightArgs: ''
+  
+  tasks:
+    - name: Deploy Config File
+      copy:
+        src: /var/tmp/vfaas{{uid}}/templates/{{mne}}.json
+        dest: /var/tmp/vfaas{{uid}}/python/modules/
+      delegate_to: localhost
+
+    - name: Run global modules
+      run_once: true
+      ignore_errors: yes
+      shell: python initialize_config.py --uid {{uid}} --mne {{mne}} --elasticUrl {{elasticUrl}} --emailOverride {{email}} --scope {{scope}} --globalHost True --env {{env}}
+      args:
+        chdir: /var/tmp/vfaas{{uid}}/python
+      register: result
+      delegate_to: localhost
+
+    - name: Check for failures
+      set_stats:
+        data:
+          noFails: false
+      when: result.rc != 0
+      delegate_to: localhost
+
+    - name: adding result stderr_lines
+      set_stats:
+        data:
+          logStringGlobal: "{{'\n' + result.stderr + '\n'}}"
+        delegate_to: localhost
+      run_once: true

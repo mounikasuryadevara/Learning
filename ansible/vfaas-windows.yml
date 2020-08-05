@@ -1,0 +1,30 @@
+---
+- name: Add Host to Dynamic Inventory
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+  - add_host:
+      name: "{{ item }}"
+      groups: dynamic
+    with_items: "{{ windowsHosts }}"
+
+- name: Running Windows Validation Playbook
+  hosts: dynamic
+  ignore_unreachable: false
+  gather_facts: false
+  serial: "100%"
+  vars:
+    emailOverride: "none"
+    elasticUrl: "none"
+    uid: "{{uid}}"
+    jsonVar: "{{ lookup('file', '/var/tmp/vfaas/templates/{{mne}}.json') | from_json }}"
+
+  tasks:
+  - name: deploy and execute windows
+    include_tasks: win_deploy_vfaas.yml
+    when: windowsHosts is iterable
+#    run_once: true
+
+# This compares hosts that are active to hosts that we expect to be active
+# When they are not the same it runs the task list check-for-unreachable-hosts.yml

@@ -1,0 +1,33 @@
+---
+- name: Clean up Vfaas folder on localhost.
+  hosts: localhost
+  connection: local
+  serial: "100%"
+  vars:
+    uid: "{{uid}}"
+    jsonVar: "{{ lookup('file', '/var/tmp/vfaas{{uid}}/templates/{{mne}}.json') | from_json }}"
+
+  tasks:
+  - name: check always run
+    loop: "{{jsonVar.Global.smoketests}}"
+    set_fact: 
+      alwaysRun: "{{item.alwaysRun | default(false)}}"
+
+  - name: Run Smoke Tests
+    loop: "{{jsonVar.Global.smoketests}}"
+    shell: "python jenkinsSmoketest.py --smoketest {{item.scm}} --cmd \'{{item.cmd}}\' --mne {{mne}} --uid {{uid}}"
+    delegate_to: localhost
+    ignore_errors: yes
+    run_once: true
+    args:
+      chdir: /var/tmp/vfaas{{uid}}/python/modules
+      register: smoketestOutput
+    when: noFails == true or alwaysRun == true
+  - debug: var=smoketestOutput
+
+  - name: adding result stderr_lines
+    set_stats:
+      data:
+        logStringGlobal: "{{ logStringGlobal + smoketestOutput.results[0].stdout}}"
+      aggregate: yes
+    when: smoketestOutput.results[0].stdout_lines is defined

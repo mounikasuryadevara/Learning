@@ -1,0 +1,157 @@
+---
+
+- name: Running Validation Playbook
+  hosts: localhost
+  ignore_unreachable: false
+  connection: local
+  gather_facts: no
+  serial: "100%"
+  vars:
+    emailOverride: "none"
+    elasticUrl: "none"
+    uid: "{{ 9999999999999999999999 | random | to_uuid }}"
+    jsonVar: "{{ lookup('file', '/var/tmp/vfaas/templates/{{mne}}.json') | from_json }}"
+    noFails: true
+    emptyString: ""
+    scope: "none"
+
+  tasks:
+  - name: Set Facts
+    set_fact:
+      uid: "{{ 9999999999999999999999 | random | to_uuid }}"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Retreive Config File from BitBucket for Stats
+    git:
+      repo: 'https://git.pncint.net/scm/vfaas/templates.git'
+      dest: /var/tmp/vfaas{{uid}}/templates
+    version: "{{templatesBranch| default('master')}}"
+    ssh_opts: "-o StrictHostKeyChecking=no"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Set Stats for rest of workflow
+    set_stats:
+      data:
+        email: "{{email| default('none')}}"
+        uid: "{{uid}}"
+        noFails: true
+        pythonBranch: "{{pythonBranch| default('master')}}"
+        powershellBranch: "{{powershellBranch| default('master')}}"
+        templatesBranch: "{{templatesBranch| default('master')}}"
+        mne: "{{mne}}"
+        env: "{{env}}"
+        windowsHosts: "{{windowsHosts| default('')}}"
+        linuxHosts: "{{linuxHosts| default('')}}"
+        logString: "{{emptyString}}"
+        logStringGlobal: "{{emptyString}}"
+        scope: "{{scope}}"
+        winRmError: null
+    delegate_to: localhost
+    run_once: true
+
+#these tasks determine whether email header variable will be set to scope or env
+  - name: altering email env with scope
+    set_stats:
+      data:
+        emailEnv: "{{scope}}"
+      aggregate: no
+    when: scope != "none"
+
+  - name: altering email env without scope
+    set_stats:
+      data:
+        emailEnv: "{{env}}"
+      aggregate: no
+    when: scope == "none"
+
+  - name: Preparing GIT Client
+    shell: git config --global http.sslVerify false
+    delegate_to: localhost
+    run_once: true
+
+  - name: Retreive Python from Bitbucket
+    git:
+      repo: 'https://git.pncint.net/scm/vfaas/python.git'
+      dest: /var/tmp/vfaas{{uid}}/python
+      force: yes
+      version: "{{pythonBranch| default('master')}}"
+      ssh_opts: "-o StrictHostKeyChecking=no"
+    delegate_to: localhost
+    run_once: true
+
+#This task will send an email to the customer when no JSON is found.
+#It uses the extra vars in ansible for the overwrite email.
+  - name: Verify jsonvar
+    block:
+      - name: Set Fact for JSON
+        set_fact:
+          jsonVar: "{{ lookup('file', '/var/tmp/vfaas{{uid}}/templates/{{mne}}.json') | from_json }}"
+        delegate_to: localhost
+        run_once: true
+    rescue:
+      - debug:
+          msg: "successful rescue of jsonvar"
+      - debug:
+          msg: "No email found to send to in ansible extra vars"
+        when: email is undefined
+      - debug:
+        msg: "Sending email about non-existent JSON."
+        when: email is defined
+      - name: Report jsonvar error
+        shell: python email_methods.py --mne {{'none'}} --uid {{uid}} --email {{email}}
+        args:
+          chdir: /var/tmp/vfaas{{uid}}/python/modules/
+        delegate_to: localhost
+        when: email is defined
+      - fail:
+        msg: Failed to load JSON.  Failing playbook intentionally.
+
+  - name: Set Stat for JSON
+    set_stats:
+    data:
+      jsonVar: "{{jsonVar}}"
+    delegate_to: localhost
+    run_once: true
+
+  - name: RetreivePowershell from Bitbucket
+    git:
+      repo: 'https://git.pncint.net/scm/vfaas/powershell.git'
+      dest: /var/tmp/vfaas{{uid}}/powershell
+      version: "{{powershellBranch| default('master')}}"
+      ssh_opts: "-o StrictHostKeyChecking=no"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Retreive Config File from BitBucket
+    git:
+      repo: 'https://git.pncint.net/scm/vfaas/templates.git'
+      dest: /var/tmp/vfaas{{uid}}/templates
+      version: "{{templatesBranch| default('master')}}"
+      ssh_opts: "-o StrictHostKeyChecking=no"
+    delegate_to: localhost
+    run_once: true
+
+  - name: Prepare Log File
+    copy:
+      content: ""
+      dest: /var/tmp/vfaas{{uid}}/python/modules/{{mne}}{{uid}}.log
+    delegate_to: localhost
+    run_once: true
+
+  - name: Create a tgz archive of the pyton folder
+    archive:
+      path: /var/tmp/vfaas{{uid}}/python
+      dest: /var/tmp/vfaas{{uid}}/vfaas.tgz
+    delegate_to: localhost
+    run_once: true
+
+  - name: Create a zip archive of powershell folder
+    archive:
+      path: /var/tmp/vfaas{{uid}}/powershell
+      format: zip
+      dest: /var/tmp/vfaas{{uid}}/vfaas.zip
+    delegate_to: localhost
+    run_once: true
+ 

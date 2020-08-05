@@ -1,0 +1,14 @@
+---
+  - name: check connectivity to all hosts
+    shell: python report_unreachable_hosts.py --unreachable_servers {{item}} --mne {{mne}} --uid {{uid}}
+    delegate_to: localhost
+    run_once: true
+    args:
+      chdir: /var/tmp/vfaas{{uid}}/python/modules/
+    register: result
+
+  - name: Report failures
+    set_stats:
+      data:
+        noFails: false
+
